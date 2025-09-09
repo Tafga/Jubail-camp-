@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Tamimi Jubail Camp Check-In/Out System</title>
+<style>
+  /* ---------- Layout ---------- */
+  body { font-family: Arial, sans-serif; margin:0; padding:20px; background:#f5f7fa; color:#222; }
+  header { background:#0077b6; color:white; padding:14px 18px; border-radius:8px; }
+  header h1 { margin:0; font-size:20px; }
+  header p { margin:4px 0 0; font-size:0.9em; opacity:0.95; }
+
+  nav { margin:14px 0; display:flex; gap:8px; flex-wrap:wrap; }
+  button { margin:0; padding:8px 12px; border:none; border-radius:6px; cursor:pointer; }
+  button.primary { background:#0077b6; color:white; }
+  button.ghost { background:transparent; border:1px solid #ddd; }
+  button.danger { background:#d62828; color:white; }
+
+  section { display:none; margin-top:10px; background:white; padding:14px; border-radius:8px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+  section.active { display:block; }
+
+  .flex { display:flex; gap:8px; align-items:center; }
+  .flex.space { justify-content:space-between; }
+  .small { font-size:0.9em; padding:6px 10px; }
+  input, select, textarea { padding:8px; margin:6px 0; width:100%; box-sizing:border-box; border:1px solid #dfe6ec; border-radius:6px; }
+  table { width:100%; border-collapse: collapse; margin-top:10px; font-size:0.95em; }
+  th, td { border:1px solid #e6eef5; padding:8px; text-align:left; vertical-align:middle; }
+  th { background:#f0f6fb; font-weight:600; }
+  .searchBar { display:flex; gap:8px; margin-bottom:10px; }
+  .muted { color:#657585; font-size:0.9em; }
+  .badge { background:#eaf6ff; color:#006699; padding:4px 8px; border-radius:999px; font-size:0.85em; display:inline-block; }
+
+  /* ---------- ID Card modal and print ---------- */
+  #printCardModal { display:none; position:fixed; z-index:9999; inset:0; align-items:center; justify-content:center; }
+  #printCard {
+    width:360px; height:288px; /* on-screen preview */
+    border-radius:10px; background:linear-gradient(180deg,#ffffff,#eef8ff); padding:12px;
+    box-shadow:0 6px 30px rgba(10,30,60,0.25); border:2px solid #dbeffb;
+    transform: scale(1); /* for on-screen */
+  }
+  #printCard .id-header { background:#0077b6; color:white; padding:8px; border-radius:8px; text-align:center; font-weight:700; }
+  #printCard .id-body { display:flex; gap:12px; padding:10px 4px; }
+  #id-photo { width:96px; height:120px; background:#fff; border-radius:6px; border:1px dashed rgba(0,0,0,0.06); display:flex; align-items:center; justify-content:center; font-size:12px; color:#555; }
+  #id-details { flex:1; font-size:13px; }
+  #id-details p { margin:6px 0; line-height:1.15; }
+  #id-qr { margin-top:6px; }
+
+  /* Print only the card and make it 3.375in x 2.125in without photo */
+  @media print {
+    body * { visibility: hidden !important; }
+    #printCard, #printCard * { visibility: visible !important; }
+    #printCard { position: absolute; left: 0; top: 0; margin:0; box-shadow:none; border:none; width:3.375in !important; height:2.125in !important; transform:none !important; }
+    /* hide photo for print */
+    #id-photo { display: none !important; }
+    /* reduce font sizes for the small card */
+    #id-details { font-size: 11px !important; }
+    #printCard .id-header { font-size: 12px !important; padding:6px !important; }
+  }
+
+  /* Small screens */
+  @media (max-width:700px){
+    nav { flex-direction:column; }
+    #printCard { width:320px; height:256px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Tamimi Jubail Camp Check-In/Out System</h1>
+  <p>By Mohamad Nabil</p>
+  <p id="welcomeMsg" class="muted">Please log in</p>
+</header>
+
+<!-- ===== LOGIN ===== -->
+<section id="login" class="active">
+  <h2>Login</h2>
+  <div style="max-width:420px;">
+    <input id="loginUsername" placeholder="Username" autocomplete="username" />
+    <input id="loginPassword" type="password" placeholder="Password" autocomplete="current-password" />
+    <div class="flex" style="margin-top:8px;">
+      <button id="loginBtn" class="primary">Login</button>
+    </div>
+    <p class="muted" style="margin-top:8px;">Admin credentials are stored securely in the script and are never shown on the page.</p>
+  </div>
+</section>
+
+<!-- ===== NAV ===== -->
+<nav id="mainNav" style="display:none;">
+  <button class="primary" id="dashboardBtn">Dashboard</button>
+  <button id="guestBtn">Guests</button>
+  <button id="roomsBtn">Rooms</button>
+  <button id="userMgmtBtn" style="display:none;">User Management</button>
+  <button id="qrBtn">QR Verification</button>
+  <button id="logoutBtn" class="danger" style="display:none;">Logout</button>
+</nav>
+
+<!-- ===== PAGE 1: Dashboard ===== -->
+<section id="dashboard">
+  <div class="flex space">
+    <h2>Dashboard</h2>
+    <div>
+      <button id="exportActionsBtn" class="primary small">Export Actions (.xlsx)</button>
+      <button id="printDashboardBtn" class="small">Print Summary</button>
+      <button id="resetAllBtn" class="danger small" style="display:none;">Admin: Reset All Data</button>
+    </div>
+  </div>
+
+  <div style="display:flex; gap:12px; margin-top:8px; flex-wrap:wrap;">
+    <div style="background:white; padding:10px; border-radius:8px; min-width:150px;">
+      <div class="muted">Total Guests</div><div style="font-size:20px;font-weight:700;" id="totalGuests">0</div>
+    </div>
+    <div style="background:white; padding:10px; border-radius:8px; min-width:150px;">
+      <div class="muted">Total Rooms (beds)</div><div style="font-size:20px;font-weight:700;" id="totalRooms">0</div>
+    </div>
+    <div style="background:white; padding:10px; border-radius:8px; min-width:150px;">
+      <div class="muted">Occupied Beds</div><div style="font-size:20px;font-weight:700;" id="occupiedRooms">0</div>
+    </div>
+    <div style="background:white; padding:10px; border-radius:8px; min-width:150px;">
+      <div class="muted">Empty Beds</div><div style="font-size:20px;font-weight:700;" id="emptyRooms">0</div>
+    </div>
+  </div>
+
+  <h3 style="margin-top:16px;">Action History</h3>
+  <table>
+    <thead><tr><th>Timestamp</th><th>User</th><th>Action</th><th>Target</th></tr></thead>
+    <tbody id="actionHistory"></tbody>
+  </table>
+</section>
+
+<!-- ===== PAGE 2: Guests ===== -->
+<section id="guestManagement">
+  <div class="flex space">
+    <h2>Guests</h2>
+    <div>
+      <button id="exportGuestsBtn" class="primary small">Export Guests (.xlsx)</button>
+      <input id="importGuestsFile" type="file" accept=".xlsx" style="display:inline-block;">
+      <button id="importGuestsBtn" class="small">Import Guests</button>
+    </div>
+  </div>
+
+  <div class="searchBar" style="margin-top:10px;">
+    <input id="guestSearch" placeholder="Search by first, last, ID or room..." />
+    <button id="clearGuestSearch" class="small">Clear</button>
+  </div>
+
+  <form id="guestForm" style="max-width:1000px;">
+    <div style="display:flex; gap:8px;">
+      <input id="firstName" placeholder="First" />
+      <input id="lastName" placeholder="Last" />
+      <input id="idNumber" placeholder="ID" />
+    </div>
+    <div style="display:flex; gap:8px;">
+      <input id="nationality" placeholder="Nationality" />
+      <input id="company" placeholder="Company" />
+      <div style="width:180px;">
+        <select id="roomCategory">
+          <option value="">Category (optional)</option>
+          <option>Senior</option>
+          <option>Junior</option>
+          <option>Labor</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <input id="roomNo" placeholder="Room No." />
+      <input id="checkIn" type="date" />
+      <input id="checkOut" type="date" />
+    </div>
+
+    <div class="flex" style="margin-top:8px;">
+      <button type="submit" class="primary">Add / Save Guest</button>
+      <button type="button" id="cancelGuestEdit" class="small hidden">Cancel Edit</button>
+    </div>
+  </form>
+
+  <table>
+    <thead>
+      <tr><th>First</th><th>Last</th><th>ID</th><th>Nationality</th><th>Room</th><th>Category</th><th>Company</th><th>Check-In</th><th>Check-Out</th><th>Added By</th><th>Actions</th></tr>
+    </thead>
+    <tbody id="guestTable"></tbody>
+  </table>
+</section>
+
+<!-- ===== PAGE 3: Rooms ===== -->
+<section id="roomsManagement">
+  <div class="flex space">
+    <h2>Rooms (beds)</h2>
+    <div>
+      <button id="exportRoomsBtn" class="primary small">Export Rooms (.xlsx)</button>
+      <input id="importRoomsFile" type="file" accept=".xlsx" style="display:inline-block;">
+      <button id="importRoomsBtn" class="small">Import Rooms</button>
+    </div>
+  </div>
+
+  <form id="roomForm" style="max-width:420px; margin-top:8px;">
+    <input id="roomNumberInput" placeholder="Room Number (e.g., 123)" />
+    <input id="roomCatInput" placeholder="Category (Senior/Junior/Labor)" />
+    <div class="flex">
+      <button type="submit" class="primary">Add Room (bed)</button>
+      <button id="clearRoomsBtn" type="button" class="small">Clear Rooms</button>
+    </div>
+    <div class="muted">Note: adding the same Room No. multiple times represents multiple beds in that room.</div>
+  </form>
+
+  <h3 style="margin-top:12px;">Room Summary (grouped by Room No.)</h3>
+  <table>
+    <thead><tr><th>Room No.</th><th>Category</th><th>Total Beds</th><th>Occupied Beds</th><th>Empty Beds</th><th>Action</th></tr></thead>
+    <tbody id="roomsTable"></tbody>
+  </table>
+</section>
+
+<!-- ===== PAGE 4: User Manager ===== -->
+<section id="userManagement">
+  <h2>User Management (Admin only)</h2>
+  <form id="createUserForm" style="max-width:420px;">
+    <input id="newUsername" placeholder="Username" />
+    <input id="newPassword" type="password" placeholder="Password" />
+    <div class="flex" style="margin-top:8px;">
+      <button type="submit" class="primary">Create User</button>
+    </div>
+  </form>
+
+  <h3 style="margin-top:10px;">Reception Users</h3>
+  <table>
+    <thead><tr><th>Username</th><th>Password (hidden)</th><th>Action</th></tr></thead>
+    <tbody id="usersTable"></tbody>
+  </table>
+</section>
+
+<!-- ===== PAGE 5: QR Verification ===== -->
+<section id="qrVerification">
+  <h2>QR Verification</h2>
+  <div style="max-width:720px;">
+    <div class="flex" style="gap:8px;">
+      <input id="verifyID" placeholder="Enter guest ID to verify manually" />
+      <button id="verifyBtn" class="small">Verify</button>
+      <button id="startScannerBtn" class="small">Start Camera Scan</button>
+      <button id="stopScannerBtn" class="small hidden">Stop Scan</button>
+    </div>
+    <p id="verifyResult" class="muted" style="margin-top:8px;"></p>
+    <div id="qrScannerRegion" style="margin-top:12px;"></div>
+  </div>
+</section>
+
+<!-- ===== ID Print Modal ===== -->
+<div id="printCardModal" aria-hidden="true" role="dialog">
+  <div id="printCard" role="document" aria-labelledby="printTitle">
+    <div class="id-header" id="printTitle">Tamimi Jubail Camp</div>
+    <div class="id-body">
+      <div id="id-photo">PHOTO</div>
+      <div id="id-details">
+        <p id="id-name" style="font-weight:700;font-size:15px;">Name</p>
+        <p id="id-id" class="muted">ID</p>
+        <p id="id-room" class="muted">Room</p>
+        <p id="id-company" class="muted">Company</p>
+        <div id="id-qr"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Libraries -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.9/minified/html5-qrcode.min.js"></script>
+
+<script>
+/* ================= INIT & STORAGE ================= */
+const ADMIN_USERNAME = "Admin";
+const ADMIN_PASSWORD = "Tafga@1990512651";
+// ensure keys exist
+if (!localStorage.getItem('users')) localStorage.setItem('users', JSON.stringify([]));
+if (!localStorage.getItem('guests')) localStorage.setItem('guests', JSON.stringify([]));
+if (!localStorage.getItem('rooms')) localStorage.setItem('rooms', JSON.stringify([]));
+if (!localStorage.getItem('actionHistory')) localStorage.setItem('actionHistory', JSON.stringify([]));
+
+let currentUser = null;
+let editingGuestIndex = null;
+let html5QrcodeScanner = null;
+
+/* ================= HELPERS ================= */
+function normalizeKey(k){ if (!k) return ''; return k.toString().trim().replace(/\s+/g,'').replace(/\./g,'').toLowerCase(); }
+function downloadWorkbook(filename, sheets){
+  const wb = XLSX.utils.book_new();
+  for (const name in sheets) {
+    const ws = XLSX.utils.json_to_sheet(sheets[name]);
+    XLSX.utils.book_append_sheet(wb, ws, name);
+  }
+  XLSX.writeFile(wb, filename);
+}
+function logAction(action, target){
+  const h = JSON.parse(localStorage.getItem('actionHistory') || '[]');
+  h.push({ time: new Date().toLocaleString(), user: currentUser || 'Unknown', action, target });
+  localStorage.setItem('actionHistory', JSON.stringify(h));
+  renderActionHistory();
+}
+
+/* ================= LOGIN ================= */
+document.getElementById('loginBtn').addEventListener('click', function(){
+  const u = document.getElementById('loginUsername').value.trim();
+  const p = document.getElementById('loginPassword').value;
+  const users = JSON.parse(localStorage.getItem('users') || '[]');
+  const found = users.find(x=>x.username === u && x.password === p);
+  if ((u === ADMIN_USERNAME && p === ADMIN_PASSWORD) || found) {
+    currentUser = u;
+    document.getElementById('welcomeMsg').textContent = `Welcome, ${u}`;
+    document.getElementById('login').classList.remove('active');
+    document.getElementById('mainNav').style.display = 'flex';
+    document.getElementById('logoutBtn').style.display = 'inline-block';
+    if (u === ADMIN_USERNAME) document.getElementById('userMgmtBtn').style.display = 'inline-block';
+    // show admin-only reset button if admin
+    if (u === ADMIN_USERNAME) document.getElementById('resetAllBtn').style.display = 'inline-block';
+    showSection('dashboard');
+    renderAll();
+    logAction('Login', u);
+  } else alert('Invalid credentials');
+});
+// Submit on Enter (login inputs)
+document.getElementById('loginUsername').addEventListener('keydown', function(e){
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    document.getElementById('loginBtn').click();
+  }
+});
+document.getElementById('loginPassword').addEventListener('keydown', function(e){
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    document.getElementById('loginBtn').click();
+  }
+});
+
+document.getElementById('logoutBtn').addEventListener('click', function(){
+  logAction('Logout', currentUser || 'Unknown');
+  location.reload();
+});
+
+/* NAV */
+document.getElementById('dashboardBtn').addEventListener('click', ()=>showSection('dashboard'));
+document.getElementById('guestBtn').addEventListener('click', ()=>showSection('guestManagement'));
+document.getElementById('roomsBtn').addEventListener('click', ()=>showSection('roomsManagement'));
+document.getElementById('userMgmtBtn').addEventListener('click', ()=>showSection('userManagement'));
+document.getElementById('qrBtn').addEventListener('click', ()=>showSection('qrVerification'));
+function showSection(id){ document.querySelectorAll('section').forEach(s=>s.classList.remove('active')); document.getElementById(id).classList.add('active'); }
+
+/* ================= RENDERERS ================= */
+function renderActionHistory(){
+  const tbody = document.getElementById('actionHistory');
+  tbody.innerHTML = '';
+  const h = JSON.parse(localStorage.getItem('actionHistory') || '[]').slice().reverse();
+  h.forEach(a=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${a.time}</td><td>${a.user}</td><td>${a.action}</td><td>${a.target}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+function renderDashboardCounts(){
+  const guests = JSON.parse(localStorage.getItem('guests') || '[]');
+  const rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
+  // rooms array may have duplicates => count beds = rooms.length
+  const totalBeds = rooms.length;
+  // occupied beds = number of guests that have a room assigned and match any room entry (just count guests with non-empty roomNo)
+  const occupiedBeds = guests.filter(g=>g.roomNo && String(g.roomNo).trim()!=='').length;
+  const emptyBeds = Math.max(0, totalBeds - occupiedBeds);
+  document.getElementById('totalGuests').textContent = guests.length;
+  document.getElementById('totalRooms').textContent = totalBeds;
+  document.getElementById('occupiedRooms').textContent = occupiedBeds;
+  document.getElementById('emptyRooms').textContent = emptyBeds;
+}
+function renderGuestTable(filter=''){
+  const tbody = document.getElementById('guestTable');
+  tbody.innerHTML = '';
+  const guests = JSON.parse(localStorage.getItem('guests') || '[]');
+  guests.forEach((g,i)=>{
+    const searchable = `${g.firstName||''} ${g.lastName||''} ${g.idNumber||''} ${g.roomNo||''}`.toLowerCase();
+    if (filter && searchable.indexOf(filter.toLowerCase()) === -1) return;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${g.firstName||''}</td><td>${g.lastName||''}</td><td>${g.idNumber||''}</td><td>${g.nationality||''}</td>
+      <td>${g.roomNo||''}</td><td>${g.roomCategory||''}</td><td>${g.company||''}</td><td>${g.checkIn||''}</td><td>${g.checkOut||''}</td><td>${g.addedBy||''}</td>
+      <td>
+        <button class="small" onclick="startEditGuest(${i})">Edit</button>
+        <button class="small" onclick="printGuestID(${i})">Print ID</button>
+        <button class="small danger" onclick="deleteGuest(${i})">Delete</button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+function renderRoomsSummary(){
+  // group rooms by roomNo; duplicates count as beds
+  const rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
+  const guests = JSON.parse(localStorage.getItem('guests') || '[]');
+  const group = {}; // roomNo -> {category, totalBeds}
+  rooms.forEach(r=>{
+    const key = String(r.roomNo || '').trim();
+    if (!key) return;
+    if (!group[key]) group[key] = { category: r.category || '', totalBeds:0 };
+    group[key].totalBeds += 1;
+    if (!group[key].category) group[key].category = r.category || '';
+  });
+  const tbody = document.getElementById('roomsTable');
+  tbody.innerHTML = '';
+  // sort room numbers alphanumeric
+  Object.keys(group).sort((a,b)=>a.localeCompare(b, undefined, {numeric:true})).forEach(roomNo=>{
+    const info = group[roomNo];
+    const occupiedCount = guests.filter(g=>String(g.roomNo).trim() === String(roomNo)).length;
+    const emptyCount = Math.max(0, info.totalBeds - occupiedCount);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${roomNo}</td><td>${info.category}</td><td>${info.totalBeds}</td><td>${occupiedCount}</td><td>${emptyCount}</td>
+      <td>
+        <button class="small" onclick="editRoom('${roomNo}')">Edit</button>
+        <button class="small danger" onclick="deleteAllBedsOfRoom('${roomNo}')">Delete All Beds</button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+function renderUsersTable(){
+  const tbody = document.getElementById('usersTable');
+  tbody.innerHTML = '';
+  const users = JSON.parse(localStorage.getItem('users') || '[]');
+  users.forEach((u,i)=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${u.username}</td><td>********</td><td><button class="small danger" onclick="deleteUser(${i})">Delete</button></td>`;
+    tbody.appendChild(tr);
+  });
+}
+function renderAll(){
+  renderActionHistory();
+  renderDashboardCounts();
+  renderGuestTable();
+  renderRoomsSummary();
+  renderUsersTable();
+}
+
+/* expose functions used in generated HTML (bind the actual functions directly) */
+window.startEditGuest = startEditGuest;
+window.deleteGuest = deleteGuest;
+window.printGuestID = printGuestID;
+window.deleteUser = deleteUser;
+window.deleteAllBedsOfRoom = deleteAllBedsOfRoom;
+window.editRoom = editRoom; // declared later (hoisted function declaration below)
+
+/* ================= GUEST CRUD ================= */
+document.getElementById('guestForm').addEventListener('submit', function(e){
+  e.preventDefault();
+  const guests = JSON.parse(localStorage.getItem('guests') || '[]');
+  const g = {
+    firstName: document.getElementById('firstName').value.trim(),
+    lastName: document.getElementById('lastName').value.trim(),
+    idNumber: document.getElementById('idNumber').value.trim(),
+    nationality: document.getElementById('nationality').value.trim(),
+    roomNo: document.getElementById('roomNo').value.trim(),
+    roomCategory: document.getElementById('roomCategory').value,
+    company: document.getElementById('company').value.trim(),
+    checkIn: document.getElementById('checkIn').value,
+    checkOut: document.getElementById('checkOut').value,
+    addedBy: currentUser || 'Unknown'
+  };
+
+  if (editingGuestIndex !== null) {
+    guests[editingGuestIndex] = g;
+    localStorage.setItem('guests', JSON.stringify(guests));
+    logAction('Edit Guest', `${g.firstName} ${g.lastName}`);
+    editingGuestIndex = null;
+    document.getElementById('cancelGuestEdit').classList.add('hidden');
+  } else {
+    guests.push(g);
+    localStorage.setItem('guests', JSON.stringify(guests));
+    logAction('Add Guest', `${g.firstName} ${g.lastName}`);
+  }
+  this.reset();
+  renderAll();
+});
+function startEditGuest(i){
+  const guests = JSON.parse(localStorage.getItem('guests') || '[]');
+  const g = guests[i];
+  if (!g) return alert('Guest not found');
+  document.getElementById('firstName').value = g.firstName || '';
+  document.getElementById('lastName').value = g.lastName || '';
+  document.getElementById('idNumber').value = g.idNumber || '';
+  document.getElementById('nationality').value = g.nationality || '';
+  document.getElementById('roomNo').value = g.roomNo || '';
+  document.getElementById('roomCategory').value = g.roomCategory || '';
+  document.getElementById('company').value = g.company || '';
+  document.getElementById('checkIn').value = g.checkIn || '';
+  document.getElementById('checkOut').value = g.checkOut || '';
+  editingGuestIndex = i;
+  document.getElementById('cancelGuestEdit').classList.remove('hidden');
+}
+document.getElementById('cancelGuestEdit').addEventListener('click', function(){ document.getElementById('guestForm').reset(); editingGuestIndex = null; this.classList.add('hidden'); });
+
+function deleteGuest(i){
+  if (!confirm('Confirm delete guest?')) return;
+  const guests = JSON.parse(localStorage.getItem('guests') || '[]');
+  const removed = guests.splice(i,1)[0];
+  localStorage.setItem('guests', JSON.stringify(guests));
+  logAction('Delete Guest', `${removed.firstName} ${removed.lastName}`);
+  renderAll();
+}
+
+/* ================= ID Printing (3.375in x 2.125in) ================= */
+function printGuestID(i){
+  const guests = JSON.parse(localStorage.getItem('guests') || '[]');
+  const g = guests[i];
+  if (!g) return alert('Guest not found');
+  document.getElementById('id-name').textContent = `${g.firstName || ''} ${g.lastName || ''}`;
+  document.getElementById('id-id').textContent = `ID: ${g.idNumber || '-'}`;
+  document.getElementById('id-room').textContent = `Room: ${g.roomNo || '-'} (${g.roomCategory || '-'})`;
+  document.getElementById('id-company').textContent = `Company: ${g.company || '-'}`;
+  document.getElementById('id-qr').innerHTML = '';
+  // adjust QR size for smaller card
+  new QRCode(document.getElementById('id-qr'), { text: (g.idNumber || 'N/A'), width: 64, height: 64 });
+
+  // show modal and print (only the card will be printed because of @media print)
+  document.getElementById('printCardModal').style.display = 'flex';
+  // small delay then print and close
+  setTimeout(function(){ window.print(); document.getElementById('printCardModal').style.display = 'none'; }, 300);
+}
+
+/* ================= ROOMS (beds) ================= */
+document.getElementById('roomForm').addEventListener('submit', function(e){
+  e.preventDefault();
+  const rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
+  const r = { roomNo: document.getElementById('roomNumberInput').value.trim(), category: document.getElementById('roomCatInput').value.trim() };
+  if (!r.roomNo) return alert('Room number required');
+  rooms.push(r); // duplicates allowed - each entry is a bed
+  localStorage.setItem('rooms', JSON.stringify(rooms));
+  logAction('Add Room Bed', r.roomNo);
+  this.reset();
+  renderAll();
+});
+function deleteAllBedsOfRoom(roomNo){
+  if (!confirm(`Delete all beds for room ${roomNo}? This removes all bed entries with that room number.`)) return;
+  let rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
+  rooms = rooms.filter(r=>String(r.roomNo).trim() !== String(roomNo).trim());
+  localStorage.setItem('rooms', JSON.stringify(rooms));
+  logAction('Delete All Beds In Room', roomNo);
+  renderAll();
+}
+window.deleteAllBedsOfRoom = deleteAllBedsOfRoom;
+document.getElementById('clearRoomsBtn').addEventListener('click', function(){
+  if (!confirm('Clear all rooms (beds)?')) return;
+  localStorage.setItem('rooms', JSON.stringify([]));
+  logAction('Clear Rooms', 'All beds removed');
+  renderAll();
+});
+
+/* Edit room category action - updates category for all beds in that room */
+function editRoom(roomNo) {
+  const rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
+  const currentCategory = (rooms.find(r=>String(r.roomNo).trim()===String(roomNo).trim()) || {}).category || '';
+  const newCat = prompt(`Edit category for room ${roomNo} (leave blank to clear). Current: "${currentCategory}"`, currentCategory);
+  if (newCat === null) return; // canceled
+  const trimmed = String(newCat).trim();
+  const updated = rooms.map(r => {
+    if (String(r.roomNo).trim() === String(roomNo).trim()) {
+      return { roomNo: r.roomNo, category: trimmed };
+    }
+    return r;
+  });
+  localStorage.setItem('rooms', JSON.stringify(updated));
+  logAction('Edit Room Category', `${roomNo} -> ${trimmed}`);
+  renderAll();
+}
+window.editRoom = editRoom;
+
+/* ================= USERS ================= */
+document.getElementById('createUserForm').addEventListener('submit', function(e){
+  e.preventDefault();
+  if (currentUser !== ADMIN_USERNAME) return alert('Only Admin can create users');
+  const username = document.getElementById('newUsername').value.trim();
+  const password = document.getElementById('newPassword').value;
+  if (!username || !password) return alert('Username and password required');
+  const users = JSON.parse(localStorage.getItem('users') || '[]');
+  if (users.find(u=>u.username === username)) return alert('Username exists');
+  users.push({ username, password });
+  localStorage.setItem('users', JSON.stringify(users));
+  logAction('Create User', username);
+  document.getElementById('newUsername').value = ''; document.getElementById('newPassword').value = '';
+  renderUsersTable();
+});
+function deleteUser(i){
+  if (currentUser !== ADMIN_USERNAME) return alert('Only Admin can delete users');
+  const users = JSON.parse(localStorage.getItem('users') || '[]');
+  const removed = users.splice(i,1)[0];
+  localStorage.setItem('users', JSON.stringify(users));
+  logAction('Delete User', removed.username);
+  renderUsersTable();
+}
+window.deleteUser = deleteUser;
+
+/* ================= IMPORT / EXPORT ================= */
+/* Rooms import - flexible headers (Room No., RoomNo, roomNo, room) */
+document.getElementById('importRoomsBtn').addEventListener('click', function(){
+  const f = document.getElementById('importRoomsFile').files[0];
+  if (!f) return alert('Select a rooms Excel file');
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    const data = new Uint8Array(ev.target.result);
+    const wb = XLSX.read(data, { type: 'array' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    const rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
+    rows.forEach(row=>{
+      const keys = Object.keys(row);
+      let roomNo = '', category = '';
+      keys.forEach(k=>{
+        const nk = normalizeKey(k);
+        if (nk.includes('room') && nk.includes('no')) roomNo = row[k];
+        if (nk === 'roomno' && !roomNo) roomNo = row[k];
+        if (nk === 'category' || nk === 'cat') category = row[k];
+      });
+      if (!roomNo) {
+        // fallback common headers
+        roomNo = row['Room No.'] || row['Room No'] || row['RoomNo'] || row['roomNo'] || row['Room'] || row['room'];
+      }
+      if (roomNo) rooms.push({ roomNo: String(roomNo).trim(), category: String(category || '').trim() });
+    });
+    localStorage.setItem('rooms', JSON.stringify(rooms));
+    logAction('Import Rooms', `${rows.length} rows`);
+    renderAll();
+    alert('Rooms imported');
+  };
+  reader.readAsArrayBuffer(f);
+});
+
+/* Guests import - flexible mapping */
+document.getElementById('importGuestsBtn').addEventListener('click', function(){
+  const f = document.getElementById('importGuestsFile').files[0];
+  if (!f) return alert('Select a guests Excel file');
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    const data = new Uint8Array(ev.target.result);
+    const wb = XLSX.read(data, { type: 'array' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    const guests = JSON.parse(localStorage.getItem('guests') || '[]');
+    rows.forEach(row=>{
+      const mapped = { firstName:'', lastName:'', idNumber:'', nationality:'', roomNo:'', roomCategory:'', company:'', checkIn:'', checkOut:'' };
+      Object.keys(row).forEach(k=>{
+        const nk = normalizeKey(k);
+        const val = row[k];
+        if (nk.includes('first')) mapped.firstName = val;
+        else if (nk.includes('last')) mapped.lastName = val;
+        else if ((nk === 'id' || nk.includes('id')) && !nk.includes('check')) mapped.idNumber = val;
+        else if (nk.includes('national')) mapped.nationality = val;
+        else if (nk.includes('room')) mapped.roomNo = val;
+        else if (nk.includes('category') || nk === 'cat') mapped.roomCategory = val;
+        else if (nk.includes('company')) mapped.company = val;
+        else if (nk.includes('checkin')) mapped.checkIn = val;
+        else if (nk.includes('checkout')) mapped.checkOut = val;
+      });
+      // fallback headers and ensure strings trimmed
+      mapped.firstName = String(mapped.firstName || row['First'] || row['First Name'] || row['FirstName'] || '').trim();
+      mapped.lastName  = String(mapped.lastName  || row['Last']  || row['Last Name']  || row['LastName']  || '').trim();
+      mapped.idNumber  = String(mapped.idNumber  || row['ID'] || row['Id'] || '').trim();
+      // robust fallback for room column
+      mapped.roomNo    = String(mapped.roomNo || row['Room No.'] || row['Room No'] || row['RoomNo'] || row['roomNo'] || row['Room'] || row['room'] || '').trim();
+      mapped.nationality = String(mapped.nationality || '').trim();
+      mapped.roomCategory = String(mapped.roomCategory || '').trim();
+      mapped.company = String(mapped.company || '').trim();
+      mapped.checkIn = String(mapped.checkIn || '').trim();
+      mapped.checkOut = String(mapped.checkOut || '').trim();
+
+      guests.push({ ...mapped, addedBy: currentUser || 'import' });
+    });
+    localStorage.setItem('guests', JSON.stringify(guests));
+    logAction('Import Guests', `${rows.length} rows`);
+    renderAll();
+    alert('Guests imported');
+  };
+  reader.readAsArrayBuffer(f);
+});
+
+/* Export */
+document.getElementById('exportGuestsBtn').addEventListener('click', ()=> {
+  const guests = JSON.parse(localStorage.getItem('guests') || '[]');
+  downloadWorkbook('guests.xlsx', { Guests: guests });
+});
+document.getElementById('exportRoomsBtn').addEventListener('click', ()=> {
+  const rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
+  downloadWorkbook('rooms.xlsx', { Rooms: rooms });
+});
+document.getElementById('exportActionsBtn').addEventListener('click', ()=> {
+  const actions = JSON.parse(localStorage.getItem('actionHistory') || '[]');
+  downloadWorkbook('actions.xlsx', { Actions: actions });
+});
+
+/* ================= SEARCH ================= */
+document.getElementById('guestSearch').addEventListener('input', function(){ renderGuestTable(this.value.trim()); });
+document.getElementById('clearGuestSearch').addEventListener('click', function(){ document.getElementById('guestSearch').value=''; renderGuestTable(); });
+
+/* ================= QR Verification (manual + camera) ================= */
+document.getElementById('verifyBtn').addEventListener('click', function(){
+  const id = document.getElementById('verifyID').value.trim();
+  if (!id) return alert('Enter ID to verify');
+  const guests = JSON.parse(localStorage.getItem('guests') || '[]');
+  const f = guests.find(g => String(g.idNumber).trim() === String(id).trim());
+  const result = document.getElementById('verifyResult');
+  if (f) {
+    result.innerHTML = `<strong>Verified:</strong> ${f.firstName||''} ${f.lastName||''} — Room ${f.roomNo||'-'} (${f.roomCategory||'-'})`;
+    result.style.color = '#0a6b2b';
+    logAction('QR Verify (manual)', id);
+  } else {
+    result.innerHTML = 'Not found';
+    result.style.color = '#b21b1b';
+    logAction('QR Verify (manual)', id + ' (not found)');
+  }
+});
+
+document.getElementById('startScannerBtn').addEventListener('click', async function(){
+  if (html5QrcodeScanner) return;
+  const regionId = 'qrScannerRegion';
+  document.getElementById('verifyResult').textContent = 'Starting camera...';
+  html5QrcodeScanner = new Html5Qrcode(regionId);
+  const config = { fps: 10, qrbox: 250 };
+  try {
+    await html5QrcodeScanner.start({ facingMode: "environment" }, config,
+      (decodedText) => {
+        document.getElementById('verifyResult').innerHTML = `Scanned: ${decodedText}`;
+        // check guest
+        const guests = JSON.parse(localStorage.getItem('guests') || '[]');
+        const found = guests.find(g => String(g.idNumber).trim() === String(decodedText).trim());
+        if (found) {
+          document.getElementById('verifyResult').innerHTML = `<strong>Verified:</strong> ${found.firstName||''} ${found.lastName||''} — Room ${found.roomNo||'-'}`;
+          logAction('QR Verify (scan)', decodedText);
+        } else {
+          document.getElementById('verifyResult').innerHTML = `Scanned: ${decodedText} — Not found`;
+          logAction('QR Verify (scan)', decodedText + ' (not found)');
+        }
+      },
+      (error) => {
+        // ignore repetitive errors
+      });
+    document.getElementById('stopScannerBtn').classList.remove('hidden');
+  } catch (err) {
+    alert('Camera start failed: ' + err);
+    html5QrcodeScanner = null;
+  }
+});
+
+document.getElementById('stopScannerBtn').addEventListener('click', async function(){
+  if (!html5QrcodeScanner) return;
+  try { await html5QrcodeScanner.stop(); } catch(e){}
+  html5QrcodeScanner.clear();
+  html5QrcodeScanner = null;
+  document.getElementById('qrScannerRegion').innerHTML = '';
+  document.getElementById('stopScannerBtn').classList.add('hidden');
+  document.getElementById('verifyResult').textContent = 'Scanner stopped';
+});
+
+/* ================= Dashboard print & reset ================= */
+document.getElementById('printDashboardBtn').addEventListener('click', function(){
+  const guests = JSON.parse(localStorage.getItem('guests') || '[]');
+  const rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
+  const occupied = guests.filter(g=>g.roomNo && String(g.roomNo).trim()!=='').length;
+  const html = `<html><head><title>Summary</title></head><body style="font-family:Arial,sans-serif;padding:12px;">
+    <h2>Tamimi Jubail Camp - Summary</h2>
+    <p>Total Guests: ${guests.length}</p>
+    <p>Total Beds: ${rooms.length}</p>
+    <p>Occupied Beds: ${occupied}</p>
+    <p>Empty Beds: ${Math.max(0, rooms.length - occupied)}</p>
+    <h3>Guest List (first 200)</h3>
+    <table border="1" cellpadding="6" cellspacing="0"><tr><th>First</th><th>Last</th><th>ID</th><th>Room</th></tr>
+    ${guests.slice(0,200).map(g=>`<tr><td>${g.firstName||''}</td><td>${g.lastName||''}</td><td>${g.idNumber||''}</td><td>${g.roomNo||''}</td></tr>`).join('')}
+    </table></body></html>`;
+  const w = window.open('', '_blank');
+  w.document.write(html); w.document.close(); w.print();
+});
+
+/* Admin reset */
+document.getElementById('resetAllBtn').addEventListener('click', function(){
+  if (currentUser !== ADMIN_USERNAME) return alert('Only Admin can reset data');
+  if (!confirm('Reset all stored data (guests, rooms, users, actions)? This cannot be undone.')) return;
+  localStorage.setItem('guests', JSON.stringify([]));
+  localStorage.setItem('rooms', JSON.stringify([]));
+  localStorage.setItem('users', JSON.stringify([]));
+  localStorage.setItem('actionHistory', JSON.stringify([]));
+  logAction('Reset All Data', currentUser);
+  alert('All data reset');
+  renderAll();
+});
+
+/* ================= EXPORT initial render ================= */
+document.getElementById('exportGuestsBtn').addEventListener('click', ()=> {
+  const guests = JSON.parse(localStorage.getItem('guests') || '[]');
+  downloadWorkbook('guests.xlsx', { Guests: guests });
+});
+document.getElementById('exportRoomsBtn').addEventListener('click', ()=> {
+  const rooms = JSON.parse(localStorage.getItem('rooms') || '[]');
+  downloadWorkbook('rooms.xlsx', { Rooms: rooms });
+});
+document.getElementById('exportActionsBtn').addEventListener('click', ()=> {
+  const actions = JSON.parse(localStorage.getItem('actionHistory') || '[]');
+  downloadWorkbook('actions.xlsx', { Actions: actions });
+});
+
+/* ================= INITIAL RENDER (page-ready) ================= */
+function renderAllAndSetup(){
+  renderAll();
+  // hide user manager until admin logs in (done in login)
+  showSection('login');
+}
+renderAllAndSetup();
+</script>
+</body>
+</html>
